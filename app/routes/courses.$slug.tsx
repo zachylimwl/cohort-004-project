@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useFetcher, useSearchParams } from "react-router";
+import { z } from "zod";
 import { toast } from "sonner";
 import type { Route } from "./+types/courses.$slug";
 import {
@@ -7,7 +8,13 @@ import {
   getCourseWithDetails,
   getLessonCountForCourse,
 } from "~/services/courseService";
+import {
+  getCourseRatingStats,
+  getUserRating,
+  upsertCourseRating,
+} from "~/services/ratingService";
 import { isUserEnrolled } from "~/services/enrollmentService";
+import { parseFormData } from "~/lib/validation";
 import {
   calculateProgress,
   getLessonProgressForCourse,
@@ -37,6 +44,7 @@ import {
 } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
 import { UserAvatar } from "~/components/user-avatar";
+import { StarRating, StarRatingInput } from "~/components/star-rating";
 import { data, isRouteErrorResponse } from "react-router";
 import { formatDuration, formatPrice } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
@@ -102,6 +110,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     : courseWithDetails.price;
   const tierInfo = getCountryTierInfo(country);
 
+  const ratingStats = getCourseRatingStats(course.id);
+  const userRating =
+    currentUserId && enrolled
+      ? (getUserRating(currentUserId, course.id)?.rating ?? null)
+      : null;
+
   return {
     course: courseWithDetails,
     salesCopyHtml,
@@ -113,10 +127,43 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     currentUserId,
     pppPrice,
     tierInfo,
+    ratingStats,
+    userRating,
   };
 }
 
-// No action — enrollment is handled via the purchase confirmation page
+const rateSchema = z.object({
+  rating: z.coerce.number().int().min(1).max(5),
+});
+
+export async function action({ params, request }: Route.ActionArgs) {
+  const course = getCourseBySlug(params.slug);
+  if (!course) {
+    throw data("Course not found", { status: 404 });
+  }
+
+  const currentUserId = await getCurrentUserId(request);
+  if (!currentUserId) {
+    throw data("You must be signed in to rate this course.", { status: 401 });
+  }
+
+  const formData = await request.formData();
+  const parsed = parseFormData(formData, rateSchema);
+  if (!parsed.success) {
+    return data({ ok: false, error: "Please choose a rating between 1 and 5." }, { status: 400 });
+  }
+
+  try {
+    upsertCourseRating(currentUserId, course.id, parsed.data.rating);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not save your rating.";
+    // Not-enrolled is the expected failure mode here.
+    throw data(message, { status: 403 });
+  }
+
+  return { ok: true };
+}
 
 export function HydrateFallback() {
   return (
@@ -181,9 +228,24 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     currentUserId,
     pppPrice,
     tierInfo,
+    ratingStats,
+    userRating,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const rateFetcher = useFetcher<{ ok: boolean }>();
+  // Optimistically reflect the in-flight rating so the stars update immediately.
+  const submittedRating = rateFetcher.formData
+    ? Number(rateFetcher.formData.get("rating"))
+    : null;
+  const displayedUserRating = submittedRating ?? userRating ?? 0;
+
+  useEffect(() => {
+    if (rateFetcher.state === "idle" && rateFetcher.data?.ok) {
+      toast.success("Thanks for rating this course!");
+    }
+  }, [rateFetcher.state, rateFetcher.data]);
 
   useEffect(() => {
     if (searchParams.get("already_enrolled") === "1") {
@@ -320,6 +382,10 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
               {formatDuration(totalDuration, true, false, false)} total
             </span>
           )}
+          <StarRating
+            average={ratingStats.average}
+            count={ratingStats.count}
+          />
         </div>
       </div>
 
@@ -413,6 +479,21 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                       Buy More Seats
                     </Button>
                   </Link>
+                  <div className="border-t pt-4">
+                    <p className="mb-2 text-sm font-medium">
+                      {userRating ? "Your rating" : "Rate this course"}
+                    </p>
+                    <StarRatingInput
+                      value={displayedUserRating}
+                      disabled={rateFetcher.state !== "idle"}
+                      onRate={(rating) =>
+                        rateFetcher.submit(
+                          { rating },
+                          { method: "post" }
+                        )
+                      }
+                    />
+                  </div>
                 </>
               ) : (
                 enrollButton

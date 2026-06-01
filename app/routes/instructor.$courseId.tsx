@@ -34,6 +34,7 @@ import {
   moveLessonToModule,
 } from "~/services/lessonService";
 import { getEnrollmentCountForCourse, getCourseEnrolledStudents } from "~/services/enrollmentService";
+import { getCourseRatingStats } from "~/services/ratingService";
 import { calculateProgress } from "~/services/progressService";
 import { getQuizByLessonId, getBestAttempt } from "~/services/quizService";
 import { getCurrentUserId } from "~/lib/session";
@@ -41,6 +42,7 @@ import { getUserById } from "~/services/userService";
 import { CourseStatus, UserRole } from "~/db/schema";
 import { formatDuration, formatPrice } from "~/lib/utils";
 import { MonacoMarkdownEditor } from "~/components/monaco-markdown-editor";
+import { StarRating } from "~/components/star-rating";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -138,6 +140,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const lessonCount = getLessonCountForCourse(courseId);
   const enrollmentCount = getEnrollmentCountForCourse(courseId);
+  const ratingStats = getCourseRatingStats(courseId);
 
   // Student roster data
   const enrolledStudents = getCourseEnrolledStudents(courseId);
@@ -185,7 +188,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const quizCount = lessonQuizzes.length;
 
-  return { course, lessonCount, enrollmentCount, students, quizCount };
+  return { course, lessonCount, enrollmentCount, ratingStats, students, quizCount };
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
@@ -984,7 +987,7 @@ function statusBadgeColor(status: string) {
 export default function InstructorCourseEditor({
   loaderData,
 }: Route.ComponentProps) {
-  const { course, lessonCount, enrollmentCount, students, quizCount } = loaderData;
+  const { course, lessonCount, enrollmentCount, ratingStats, students, quizCount } = loaderData;
   const statusFetcher = useFetcher();
   const reorderFetcher = useFetcher();
   const lessonReorderFetcher = useFetcher();
@@ -1168,6 +1171,10 @@ export default function InstructorCourseEditor({
             {enrollmentCount}{" "}
             {enrollmentCount === 1 ? "student" : "students"}
           </span>
+          <StarRating
+            average={ratingStats.average}
+            count={ratingStats.count}
+          />
           <span className="text-xs text-muted-foreground">
             Slug: /courses/{course.slug}
           </span>

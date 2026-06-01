@@ -2,6 +2,8 @@ import { Link } from "react-router";
 import type { Route } from "./+types/instructor";
 import { getCoursesByInstructor, getLessonCountForCourse } from "~/services/courseService";
 import { getEnrollmentCountForCourse } from "~/services/enrollmentService";
+import { getCourseRatingStats } from "~/services/ratingService";
+import { StarRating } from "~/components/star-rating";
 import { getCurrentUserId } from "~/lib/session";
 import { getUserById } from "~/services/userService";
 import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
@@ -41,6 +43,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const coursesWithStats = instructorCourses.map((course) => {
     const lessonCount = getLessonCountForCourse(course.id);
     const enrollmentCount = getEnrollmentCountForCourse(course.id);
+    const rating = getCourseRatingStats(course.id);
 
     return {
       id: course.id,
@@ -51,6 +54,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       coverImageUrl: course.coverImageUrl,
       lessonCount,
       enrollmentCount,
+      ratingAverage: rating.average,
+      ratingCount: rating.count,
       createdAt: course.createdAt,
       updatedAt: course.updatedAt,
     };
@@ -204,6 +209,12 @@ export default function InstructorDashboard({
                       {course.enrollmentCount === 1 ? "student" : "students"}
                     </span>
                   </div>
+                </div>
+                <div className="mt-3">
+                  <StarRating
+                    average={course.ratingAverage}
+                    count={course.ratingCount}
+                  />
                 </div>
               </CardContent>
               <CardFooter>
