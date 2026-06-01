@@ -26,7 +26,14 @@ import {
   getBestAttempt,
 } from "~/services/quizService";
 import { computeResult } from "~/services/quizScoringService";
-import { LessonProgressStatus } from "~/db/schema";
+import {
+  getCommentsForLesson,
+  createComment,
+  softDeleteComment,
+  getCommentById,
+} from "~/services/commentService";
+import { getUserById } from "~/services/userService";
+import { LessonProgressStatus, UserRole } from "~/db/schema";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import {
@@ -40,8 +47,10 @@ import {
   Github,
   HelpCircle,
   MapPin,
+  MessageSquare,
   PlayCircle,
   ShieldAlert,
+  Trash2,
   XCircle,
   Trophy,
   RotateCcw,
@@ -191,6 +200,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     pppPurchaseCountry = pppResult.purchaseCountry;
   }
 
+  const comments = currentUserId ? getCommentsForLesson(lessonId) : [];
+  const currentUser = currentUserId ? getUserById(currentUserId) : null;
+  const isAdmin = currentUser?.role === UserRole.Admin;
+
   // Render lesson content from Markdown to HTML server-side
   const contentHtml = lesson.content
     ? await renderMarkdown(lesson.content)
@@ -253,6 +266,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       id: courseWithDetails.id,
       title: courseWithDetails.title,
       slug: courseWithDetails.slug,
+      instructorId: courseWithDetails.instructorId,
     },
     curriculum: courseWithDetails.modules.map((m) => ({
       id: m.id,
@@ -281,6 +295,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     pppBlocked,
     pppBlockedCountry,
     pppPurchaseCountry,
+    comments,
+    isAdmin,
   };
 }
 
@@ -329,6 +345,41 @@ export async function action({ params, request }: Route.ActionArgs) {
     }
 
     return { quizResult: result };
+  }
+
+  if (intent === "post-comment") {
+    const currentUser = getUserById(currentUserId);
+    const isAdmin = currentUser?.role === UserRole.Admin;
+    const isInstructor = course.instructorId === currentUserId;
+    if (!isUserEnrolled(currentUserId, course.id) && !isInstructor && !isAdmin) {
+      throw data("You must be enrolled to comment", { status: 403 });
+    }
+    const body = String(formData.get("body") ?? "").trim();
+    if (!body) {
+      throw data("Comment body is required", { status: 400 });
+    }
+    createComment(lessonId, currentUserId, body);
+    return { success: true };
+  }
+
+  if (intent === "delete-comment") {
+    const commentId = Number(formData.get("commentId"));
+    if (isNaN(commentId)) {
+      throw data("Invalid comment ID", { status: 400 });
+    }
+    const comment = getCommentById(commentId);
+    if (!comment) {
+      throw data("Comment not found", { status: 404 });
+    }
+    const currentUser = getUserById(currentUserId);
+    const isAdmin = currentUser?.role === UserRole.Admin;
+    const isOwner = comment.userId === currentUserId;
+    const isInstructor = course.instructorId === currentUserId;
+    if (!isOwner && !isInstructor && !isAdmin) {
+      throw data("Not authorized to delete this comment", { status: 403 });
+    }
+    softDeleteComment(commentId);
+    return { success: true };
   }
 
   throw data("Invalid action", { status: 400 });
@@ -382,6 +433,8 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
     pppBlocked,
     pppBlockedCountry,
     pppPurchaseCountry,
+    comments,
+    isAdmin,
   } = loaderData;
   const [autoplay, toggleAutoplay] = useAutoplay();
   const fetcher = useFetcher({ key: `mark-complete-${lesson.id}` });
@@ -639,6 +692,17 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
               </Link>
             )}
           </div>
+
+          {/* Comments */}
+          {currentUserId && (
+            <CommentsSection
+              comments={comments}
+              currentUserId={currentUserId}
+              courseInstructorId={course.instructorId}
+              enrolled={enrolled}
+              isAdmin={isAdmin}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -1011,6 +1075,141 @@ function QuizSection({
         </quizFetcher.Form>
       </CardContent>
     </Card>
+  );
+}
+
+type Comment = {
+  id: number;
+  body: string;
+  createdAt: string;
+  userId: number;
+  userName: string;
+  userAvatarUrl: string | null;
+};
+
+function CommentsSection({
+  comments,
+  currentUserId,
+  courseInstructorId,
+  enrolled,
+  isAdmin,
+}: {
+  comments: Comment[];
+  currentUserId: number;
+  courseInstructorId: number;
+  enrolled: boolean;
+  isAdmin: boolean;
+}) {
+  const fetcher = useFetcher({ key: "comments" });
+  const [body, setBody] = useState("");
+
+  const isSubmitting =
+    fetcher.state !== "idle" && fetcher.formData?.get("intent") === "post-comment";
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.success && body) {
+      setBody("");
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  return (
+    <div className="mt-10 border-t pt-8">
+      <h2 className="mb-6 flex items-center gap-2 text-xl font-semibold">
+        <MessageSquare className="size-5" />
+        Comments
+        {comments.length > 0 && (
+          <span className="text-sm font-normal text-muted-foreground">
+            ({comments.length})
+          </span>
+        )}
+      </h2>
+
+      {comments.length === 0 && (
+        <p className="mb-6 text-sm text-muted-foreground">
+          No comments yet. {enrolled ? "Be the first!" : "Enroll to comment."}
+        </p>
+      )}
+
+      <div className="space-y-4 mb-8">
+        {comments.map((comment) => {
+          const canDelete =
+            comment.userId === currentUserId ||
+            courseInstructorId === currentUserId ||
+            isAdmin;
+
+          return (
+            <div key={comment.id} className="flex gap-3">
+              <div className="size-8 shrink-0 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                {comment.userAvatarUrl ? (
+                  <img
+                    src={comment.userAvatarUrl}
+                    alt={comment.userName}
+                    className="size-8 object-cover"
+                  />
+                ) : (
+                  <span className="text-xs font-medium">
+                    {comment.userName.charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-medium">{comment.userName}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(comment.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="text-sm whitespace-pre-wrap">{comment.body}</p>
+              </div>
+              {canDelete && (
+                <fetcher.Form method="post">
+                  <input type="hidden" name="intent" value="delete-comment" />
+                  <input type="hidden" name="commentId" value={comment.id} />
+                  <button
+                    type="submit"
+                    className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                    title="Delete comment"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </fetcher.Form>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {enrolled || courseInstructorId === currentUserId || isAdmin ? (
+        <fetcher.Form method="post" className="space-y-3">
+          <input type="hidden" name="intent" value="post-comment" />
+          <textarea
+            name="body"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Leave a comment..."
+            rows={3}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!body.trim() || isSubmitting}
+          >
+            {isSubmitting ? "Posting..." : "Post Comment"}
+          </Button>
+        </fetcher.Form>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          <Link
+            to={`/courses`}
+            className="text-primary underline underline-offset-2"
+          >
+            Enroll in this course
+          </Link>{" "}
+          to leave a comment.
+        </p>
+      )}
+    </div>
   );
 }
 
