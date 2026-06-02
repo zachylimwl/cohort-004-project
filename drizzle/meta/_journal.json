@@ -36,6 +36,13 @@
       "when": 1780318229556,
       "tag": "0004_careful_blockbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1780387153193,
+      "tag": "0005_minor_maximus",
+      "breakpoints": true
     }
   ]
 }
