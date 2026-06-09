@@ -274,5 +274,82 @@ describe("couponService", () => {
 
       expect(result.ok).toBe(true);
     });
+
+    it("creates a notification for the team admin on successful redemption", () => {
+      const { team, purchase } = setupTeamAndPurchase();
+      const [coupon] = generateCoupons(team.id, base.course.id, purchase.id, 1);
+      const redeemer = createRedeemer();
+
+      redeemCoupon(coupon.code, redeemer.id, "US");
+
+      const notifs = testDb.select().from(schema.notifications).all();
+
+      expect(notifs).toHaveLength(1);
+      expect(notifs[0].recipientUserId).toBe(base.user.id);
+      expect(notifs[0].type).toBe(schema.NotificationType.CouponRedemption);
+      expect(notifs[0].title).toBe("Seat Claimed");
+      expect(notifs[0].linkUrl).toBe("/team");
+    });
+
+    it("notification message includes redeemer name, course title, and seat counts", () => {
+      const { team, purchase } = setupTeamAndPurchase();
+      const [firstCoupon] = generateCoupons(
+        team.id,
+        base.course.id,
+        purchase.id,
+        3
+      );
+      const redeemer = createRedeemer();
+
+      redeemCoupon(firstCoupon.code, redeemer.id, "US");
+
+      const notifs = testDb.select().from(schema.notifications).all();
+      expect(notifs[0].message).toBe(
+        "Redeemer redeemed a coupon for Test Course (2 of 3 seats remaining)"
+      );
+    });
+
+    it("does not create a notification on failed redemption", () => {
+      const result = redeemCoupon("nonexistent-code", 999, "US");
+
+      expect(result.ok).toBe(false);
+
+      const notifs = testDb.select().from(schema.notifications).all();
+      expect(notifs).toHaveLength(0);
+    });
+
+    it("creates one notification per team admin when there are multiple admins", () => {
+      const { team, purchase } = setupTeamAndPurchase();
+      // Add a second admin
+      const secondAdmin = testDb
+        .insert(schema.users)
+        .values({
+          name: "Second Admin",
+          email: "second-admin@example.com",
+          role: schema.UserRole.Student,
+        })
+        .returning()
+        .get();
+      testDb
+        .insert(schema.teamMembers)
+        .values({
+          teamId: team.id,
+          userId: secondAdmin.id,
+          role: schema.TeamMemberRole.Admin,
+        })
+        .run();
+
+      const [coupon] = generateCoupons(team.id, base.course.id, purchase.id, 1);
+      const redeemer = createRedeemer();
+
+      redeemCoupon(coupon.code, redeemer.id, "US");
+
+      const notifs = testDb.select().from(schema.notifications).all();
+      expect(notifs).toHaveLength(2);
+
+      const recipientIds = notifs.map((n) => n.recipientUserId);
+      expect(recipientIds).toContain(base.user.id);
+      expect(recipientIds).toContain(secondAdmin.id);
+    });
   });
 });
