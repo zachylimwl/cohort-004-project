@@ -25,6 +25,7 @@ import {
   getCourseEnrolledStudents,
   markEnrollmentComplete,
 } from "./enrollmentService";
+import { getNotifications } from "./notificationService";
 
 describe("enrollmentService", () => {
   beforeEach(() => {
@@ -248,6 +249,27 @@ describe("enrollmentService", () => {
 
     it("returns empty array when course has no enrollments", () => {
       expect(getCourseEnrolledStudents(base.course.id)).toHaveLength(0);
+    });
+  });
+
+  describe("enrollment notification integration", () => {
+    it("creates a notification for the instructor when a student enrolls", () => {
+      enrollUser(base.user.id, base.course.id, false, false);
+
+      const notifications = getNotifications(base.instructor.id, 10, 0);
+      expect(notifications).toHaveLength(1);
+
+      const notification = notifications[0];
+      expect(notification.recipientUserId).toBe(base.instructor.id);
+      expect(notification.type).toBe(schema.NotificationType.Enrollment);
+      expect(notification.title).toBe("New Enrollment");
+      expect(notification.message).toBe(
+        `${base.user.name} enrolled in ${base.course.title}`
+      );
+      expect(notification.linkUrl).toBe(
+        `/instructor/${base.course.id}/students`
+      );
+      expect(notification.isRead).toBe(false);
     });
   });
 });
