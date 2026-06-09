@@ -21,11 +21,20 @@ If the task has not already been planned, create a plan for it.
 
 ### 3. Implement
 
-Work through the plan step by step.
+**For frontend code**: implement directly without TDD.
+
+**For backend code**: use a tracer-bullet red/green cycle — one test at a time, refactor once at the end:
+
+1. **Red** — write a single failing test that covers the next piece of behaviour. Run it and confirm it fails for the right reason.
+2. **Green** — write the minimum production code to make that one test pass. Run the test again and confirm it is green.
+3. Repeat from step 1 for the next behaviour until the slice is complete.
+4. **Refactor** — once all tests are green, clean up the full implementation. Re-run all tests to confirm nothing regressed.
+
+each test should target one thin vertical slice through the system. Never write the next test until the current one is green.
 
 ### 4. Feedback loop
 
-After implementing, run both checks and iterate until both pass:
+After all tests are written and green, run both checks and iterate until both pass:
 
 ```bash
 pnpm typecheck   # must exit 0
