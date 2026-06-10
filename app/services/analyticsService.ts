@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, isNotNull, sql } from "drizzle-orm";
+import { eq, and, gte, lte, isNotNull, sql, desc } from "drizzle-orm";
 import { db } from "~/db";
 import {
   enrollments,
@@ -10,6 +10,7 @@ import {
   courses,
   lessonProgress,
   LessonProgressStatus,
+  users,
 } from "~/db/schema";
 
 export type DailyDataPoint = { date: string; value: number };
@@ -42,8 +43,10 @@ export function getEnrollmentStats({
       and(
         eq(courses.instructorId, instructorId),
         courseId !== undefined ? eq(enrollments.courseId, courseId) : undefined,
-        startDate !== undefined ? gte(enrollments.enrolledAt, startDate) : undefined,
-        endDate !== undefined ? lte(enrollments.enrolledAt, endDate) : undefined,
+        startDate !== undefined
+          ? gte(enrollments.enrolledAt, startDate)
+          : undefined,
+        endDate !== undefined ? lte(enrollments.enrolledAt, endDate) : undefined
       )
     )
     .get();
@@ -57,15 +60,19 @@ export function getRevenueStats({
   courseId,
 }: AnalyticsFilter): number {
   const result = db
-    .select({ totalCents: sql<number>`coalesce(sum(${purchases.pricePaid}), 0)` })
+    .select({
+      totalCents: sql<number>`coalesce(sum(${purchases.pricePaid}), 0)`,
+    })
     .from(purchases)
     .innerJoin(courses, eq(purchases.courseId, courses.id))
     .where(
       and(
         eq(courses.instructorId, instructorId),
         courseId !== undefined ? eq(purchases.courseId, courseId) : undefined,
-        startDate !== undefined ? gte(purchases.createdAt, startDate) : undefined,
-        endDate !== undefined ? lte(purchases.createdAt, endDate) : undefined,
+        startDate !== undefined
+          ? gte(purchases.createdAt, startDate)
+          : undefined,
+        endDate !== undefined ? lte(purchases.createdAt, endDate) : undefined
       )
     )
     .get();
@@ -87,8 +94,12 @@ export function getCompletionStats({
         eq(courses.instructorId, instructorId),
         isNotNull(enrollments.completedAt),
         courseId !== undefined ? eq(enrollments.courseId, courseId) : undefined,
-        startDate !== undefined ? gte(enrollments.completedAt, startDate) : undefined,
-        endDate !== undefined ? lte(enrollments.completedAt, endDate) : undefined,
+        startDate !== undefined
+          ? gte(enrollments.completedAt, startDate)
+          : undefined,
+        endDate !== undefined
+          ? lte(enrollments.completedAt, endDate)
+          : undefined
       )
     )
     .get();
@@ -115,8 +126,12 @@ export function getQuizPassRateStats({
       and(
         eq(courses.instructorId, instructorId),
         courseId !== undefined ? eq(courses.id, courseId) : undefined,
-        startDate !== undefined ? gte(quizAttempts.attemptedAt, startDate) : undefined,
-        endDate !== undefined ? lte(quizAttempts.attemptedAt, endDate) : undefined,
+        startDate !== undefined
+          ? gte(quizAttempts.attemptedAt, startDate)
+          : undefined,
+        endDate !== undefined
+          ? lte(quizAttempts.attemptedAt, endDate)
+          : undefined
       )
     )
     .get();
@@ -143,8 +158,10 @@ export function getDailyEnrollments({
       and(
         eq(courses.instructorId, instructorId),
         courseId !== undefined ? eq(enrollments.courseId, courseId) : undefined,
-        startDate !== undefined ? gte(enrollments.enrolledAt, startDate) : undefined,
-        endDate !== undefined ? lte(enrollments.enrolledAt, endDate) : undefined,
+        startDate !== undefined
+          ? gte(enrollments.enrolledAt, startDate)
+          : undefined,
+        endDate !== undefined ? lte(enrollments.enrolledAt, endDate) : undefined
       )
     )
     .groupBy(sql`date(${enrollments.enrolledAt})`)
@@ -169,8 +186,10 @@ export function getDailyRevenue({
       and(
         eq(courses.instructorId, instructorId),
         courseId !== undefined ? eq(purchases.courseId, courseId) : undefined,
-        startDate !== undefined ? gte(purchases.createdAt, startDate) : undefined,
-        endDate !== undefined ? lte(purchases.createdAt, endDate) : undefined,
+        startDate !== undefined
+          ? gte(purchases.createdAt, startDate)
+          : undefined,
+        endDate !== undefined ? lte(purchases.createdAt, endDate) : undefined
       )
     )
     .groupBy(sql`date(${purchases.createdAt})`)
@@ -196,8 +215,12 @@ export function getDailyCompletions({
         eq(courses.instructorId, instructorId),
         isNotNull(enrollments.completedAt),
         courseId !== undefined ? eq(enrollments.courseId, courseId) : undefined,
-        startDate !== undefined ? gte(enrollments.completedAt, startDate) : undefined,
-        endDate !== undefined ? lte(enrollments.completedAt, endDate) : undefined,
+        startDate !== undefined
+          ? gte(enrollments.completedAt, startDate)
+          : undefined,
+        endDate !== undefined
+          ? lte(enrollments.completedAt, endDate)
+          : undefined
       )
     )
     .groupBy(sql`date(${enrollments.completedAt})`)
@@ -225,8 +248,12 @@ export function getDailyQuizPassRates({
       and(
         eq(courses.instructorId, instructorId),
         courseId !== undefined ? eq(courses.id, courseId) : undefined,
-        startDate !== undefined ? gte(quizAttempts.attemptedAt, startDate) : undefined,
-        endDate !== undefined ? lte(quizAttempts.attemptedAt, endDate) : undefined,
+        startDate !== undefined
+          ? gte(quizAttempts.attemptedAt, startDate)
+          : undefined,
+        endDate !== undefined
+          ? lte(quizAttempts.attemptedAt, endDate)
+          : undefined
       )
     )
     .groupBy(sql`date(${quizAttempts.attemptedAt})`)
@@ -234,7 +261,91 @@ export function getDailyQuizPassRates({
     .all();
 }
 
-export function getLessonDropOffFunnel({ courseId }: { courseId: number }): FunnelEntry[] {
+type PlatformAnalyticsFilter = {
+  startDate?: string;
+  endDate?: string;
+};
+
+export function getPlatformRevenueStats({
+  startDate,
+  endDate,
+}: PlatformAnalyticsFilter): number {
+  const result = db
+    .select({
+      totalCents: sql<number>`coalesce(sum(${purchases.pricePaid}), 0)`,
+    })
+    .from(purchases)
+    .where(
+      and(
+        startDate !== undefined
+          ? gte(purchases.createdAt, startDate)
+          : undefined,
+        endDate !== undefined ? lte(purchases.createdAt, endDate) : undefined
+      )
+    )
+    .get();
+  return result?.totalCents ?? 0;
+}
+
+export function getPlatformEnrollmentStats({
+  startDate,
+  endDate,
+}: PlatformAnalyticsFilter): number {
+  const result = db
+    .select({ count: sql<number>`count(*)` })
+    .from(enrollments)
+    .where(
+      and(
+        startDate !== undefined
+          ? gte(enrollments.enrolledAt, startDate)
+          : undefined,
+        endDate !== undefined ? lte(enrollments.enrolledAt, endDate) : undefined
+      )
+    )
+    .get();
+  return result?.count ?? 0;
+}
+
+export type TopEarningCourse = {
+  courseId: number;
+  title: string;
+  revenueCents: number;
+};
+
+export function getTopEarningCourse({
+  startDate,
+  endDate,
+}: PlatformAnalyticsFilter): TopEarningCourse | null {
+  const result = db
+    .select({
+      courseId: courses.id,
+      title: courses.title,
+      revenueCents: sql<number>`coalesce(sum(${purchases.pricePaid}), 0)`,
+    })
+    .from(purchases)
+    .innerJoin(courses, eq(purchases.courseId, courses.id))
+    .where(
+      and(
+        startDate !== undefined
+          ? gte(purchases.createdAt, startDate)
+          : undefined,
+        endDate !== undefined ? lte(purchases.createdAt, endDate) : undefined
+      )
+    )
+    .groupBy(courses.id)
+    .orderBy(desc(sql`sum(${purchases.pricePaid})`))
+    .limit(1)
+    .get();
+
+  if (!result) return null;
+  return result;
+}
+
+export function getLessonDropOffFunnel({
+  courseId,
+}: {
+  courseId: number;
+}): FunnelEntry[] {
   const enrolledResult = db
     .select({ count: sql<number>`count(*)` })
     .from(enrollments)

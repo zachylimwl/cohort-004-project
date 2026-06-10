@@ -21,6 +21,9 @@ import {
   getDailyCompletions,
   getDailyQuizPassRates,
   getLessonDropOffFunnel,
+  getPlatformRevenueStats,
+  getPlatformEnrollmentStats,
+  getTopEarningCourse,
 } from "./analyticsService";
 
 beforeEach(() => {
@@ -104,7 +107,11 @@ describe("getEnrollmentStats", () => {
   it("does not count enrollments for other instructors' courses", () => {
     const other = testDb
       .insert(schema.users)
-      .values({ name: "Other", email: "other@example.com", role: schema.UserRole.Instructor })
+      .values({
+        name: "Other",
+        email: "other@example.com",
+        role: schema.UserRole.Instructor,
+      })
       .returning()
       .get();
     createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z");
@@ -114,20 +121,32 @@ describe("getEnrollmentStats", () => {
   it("filters by startDate", () => {
     createEnrollment(base.user.id, base.course.id, "2024-01-15T00:00:00.000Z");
     expect(
-      getEnrollmentStats({ instructorId: base.instructor.id, startDate: "2024-02-01T00:00:00.000Z" })
+      getEnrollmentStats({
+        instructorId: base.instructor.id,
+        startDate: "2024-02-01T00:00:00.000Z",
+      })
     ).toBe(0);
     expect(
-      getEnrollmentStats({ instructorId: base.instructor.id, startDate: "2024-01-01T00:00:00.000Z" })
+      getEnrollmentStats({
+        instructorId: base.instructor.id,
+        startDate: "2024-01-01T00:00:00.000Z",
+      })
     ).toBe(1);
   });
 
   it("filters by endDate", () => {
     createEnrollment(base.user.id, base.course.id, "2024-03-01T00:00:00.000Z");
     expect(
-      getEnrollmentStats({ instructorId: base.instructor.id, endDate: "2024-02-01T00:00:00.000Z" })
+      getEnrollmentStats({
+        instructorId: base.instructor.id,
+        endDate: "2024-02-01T00:00:00.000Z",
+      })
     ).toBe(0);
     expect(
-      getEnrollmentStats({ instructorId: base.instructor.id, endDate: "2024-03-01T00:00:00.000Z" })
+      getEnrollmentStats({
+        instructorId: base.instructor.id,
+        endDate: "2024-03-01T00:00:00.000Z",
+      })
     ).toBe(1);
   });
 
@@ -147,7 +166,10 @@ describe("getEnrollmentStats", () => {
     createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z");
     createEnrollment(base.user.id, otherCourse.id, "2024-01-01T00:00:00.000Z");
     expect(
-      getEnrollmentStats({ instructorId: base.instructor.id, courseId: base.course.id })
+      getEnrollmentStats({
+        instructorId: base.instructor.id,
+        courseId: base.course.id,
+      })
     ).toBe(1);
   });
 });
@@ -158,24 +180,53 @@ describe("getRevenueStats", () => {
   });
 
   it("sums pricePaid for the instructor's courses", () => {
-    createPurchase(base.user.id, base.course.id, 2000, "2024-01-01T00:00:00.000Z");
-    createPurchase(base.user.id, base.course.id, 3000, "2024-01-02T00:00:00.000Z");
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-01-01T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      3000,
+      "2024-01-02T00:00:00.000Z"
+    );
     expect(getRevenueStats({ instructorId: base.instructor.id })).toBe(5000);
   });
 
   it("does not include purchases for other instructors", () => {
     const other = testDb
       .insert(schema.users)
-      .values({ name: "Other", email: "other2@example.com", role: schema.UserRole.Instructor })
+      .values({
+        name: "Other",
+        email: "other2@example.com",
+        role: schema.UserRole.Instructor,
+      })
       .returning()
       .get();
-    createPurchase(base.user.id, base.course.id, 5000, "2024-01-01T00:00:00.000Z");
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      5000,
+      "2024-01-01T00:00:00.000Z"
+    );
     expect(getRevenueStats({ instructorId: other.id })).toBe(0);
   });
 
   it("filters by date range", () => {
-    createPurchase(base.user.id, base.course.id, 2000, "2024-01-01T00:00:00.000Z");
-    createPurchase(base.user.id, base.course.id, 3000, "2024-03-01T00:00:00.000Z");
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-01-01T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      3000,
+      "2024-03-01T00:00:00.000Z"
+    );
     expect(
       getRevenueStats({
         instructorId: base.instructor.id,
@@ -193,17 +244,33 @@ describe("getCompletionStats", () => {
   });
 
   it("counts only enrollments with completedAt set", () => {
-    createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z", "2024-02-01T00:00:00.000Z");
+    createEnrollment(
+      base.user.id,
+      base.course.id,
+      "2024-01-01T00:00:00.000Z",
+      "2024-02-01T00:00:00.000Z"
+    );
     expect(getCompletionStats({ instructorId: base.instructor.id })).toBe(1);
   });
 
   it("filters completions by date range on completedAt", () => {
-    createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z", "2024-01-15T00:00:00.000Z");
+    createEnrollment(
+      base.user.id,
+      base.course.id,
+      "2024-01-01T00:00:00.000Z",
+      "2024-01-15T00:00:00.000Z"
+    );
     expect(
-      getCompletionStats({ instructorId: base.instructor.id, startDate: "2024-02-01T00:00:00.000Z" })
+      getCompletionStats({
+        instructorId: base.instructor.id,
+        startDate: "2024-02-01T00:00:00.000Z",
+      })
     ).toBe(0);
     expect(
-      getCompletionStats({ instructorId: base.instructor.id, endDate: "2024-02-01T00:00:00.000Z" })
+      getCompletionStats({
+        instructorId: base.instructor.id,
+        endDate: "2024-02-01T00:00:00.000Z",
+      })
     ).toBe(1);
   });
 });
@@ -232,7 +299,11 @@ describe("getQuizPassRateStats", () => {
   it("does not include attempts for other instructors", () => {
     const other = testDb
       .insert(schema.users)
-      .values({ name: "Other", email: "other3@example.com", role: schema.UserRole.Instructor })
+      .values({
+        name: "Other",
+        email: "other3@example.com",
+        role: schema.UserRole.Instructor,
+      })
       .returning()
       .get();
     const mod = createModule(base.course.id);
@@ -273,7 +344,9 @@ function createLessonProgress(
 
 describe("getDailyEnrollments", () => {
   it("returns empty array when no enrollments", () => {
-    expect(getDailyEnrollments({ instructorId: base.instructor.id })).toEqual([]);
+    expect(getDailyEnrollments({ instructorId: base.instructor.id })).toEqual(
+      []
+    );
   });
 
   it("groups enrollments by calendar day", () => {
@@ -306,9 +379,24 @@ describe("getDailyRevenue", () => {
   });
 
   it("groups revenue by calendar day", () => {
-    createPurchase(base.user.id, base.course.id, 1000, "2024-01-15T08:00:00.000Z");
-    createPurchase(base.user.id, base.course.id, 2000, "2024-01-15T20:00:00.000Z");
-    createPurchase(base.user.id, base.course.id, 500, "2024-01-16T08:00:00.000Z");
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      1000,
+      "2024-01-15T08:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-01-15T20:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      500,
+      "2024-01-16T08:00:00.000Z"
+    );
 
     const rows = getDailyRevenue({ instructorId: base.instructor.id });
     expect(rows).toHaveLength(2);
@@ -320,12 +408,24 @@ describe("getDailyRevenue", () => {
 describe("getDailyCompletions", () => {
   it("returns empty array when no completions", () => {
     createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z");
-    expect(getDailyCompletions({ instructorId: base.instructor.id })).toEqual([]);
+    expect(getDailyCompletions({ instructorId: base.instructor.id })).toEqual(
+      []
+    );
   });
 
   it("groups completions by completedAt day", () => {
-    createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z", "2024-02-10T10:00:00.000Z");
-    createEnrollment(base.user.id, base.course.id, "2024-01-02T00:00:00.000Z", "2024-02-10T18:00:00.000Z");
+    createEnrollment(
+      base.user.id,
+      base.course.id,
+      "2024-01-01T00:00:00.000Z",
+      "2024-02-10T10:00:00.000Z"
+    );
+    createEnrollment(
+      base.user.id,
+      base.course.id,
+      "2024-01-02T00:00:00.000Z",
+      "2024-02-10T18:00:00.000Z"
+    );
 
     const rows = getDailyCompletions({ instructorId: base.instructor.id });
     expect(rows).toHaveLength(1);
@@ -335,7 +435,9 @@ describe("getDailyCompletions", () => {
 
 describe("getDailyQuizPassRates", () => {
   it("returns empty array when no attempts", () => {
-    expect(getDailyQuizPassRates({ instructorId: base.instructor.id })).toEqual([]);
+    expect(getDailyQuizPassRates({ instructorId: base.instructor.id })).toEqual(
+      []
+    );
   });
 
   it("computes pass rate (0-100) per day", () => {
@@ -365,7 +467,11 @@ describe("getLessonDropOffFunnel", () => {
     const lesson2 = createLesson(mod.id, 2);
 
     createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z");
-    createLessonProgress(base.user.id, lesson1.id, schema.LessonProgressStatus.Completed);
+    createLessonProgress(
+      base.user.id,
+      lesson1.id,
+      schema.LessonProgressStatus.Completed
+    );
 
     const rows = getLessonDropOffFunnel({ courseId: base.course.id });
     expect(rows).toHaveLength(2);
@@ -382,10 +488,202 @@ describe("getLessonDropOffFunnel", () => {
     const lesson = createLesson(mod.id, 1);
 
     createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z");
-    createLessonProgress(base.user.id, lesson.id, schema.LessonProgressStatus.InProgress);
+    createLessonProgress(
+      base.user.id,
+      lesson.id,
+      schema.LessonProgressStatus.InProgress
+    );
 
     const rows = getLessonDropOffFunnel({ courseId: base.course.id });
     expect(rows[0].completedCount).toBe(0);
     expect(rows[0].percentage).toBe(0);
+  });
+});
+
+describe("getPlatformRevenueStats", () => {
+  it("returns 0 when no purchases exist", () => {
+    expect(getPlatformRevenueStats({})).toBe(0);
+  });
+
+  it("sums revenue across all instructors", () => {
+    const otherInstructor = testDb
+      .insert(schema.users)
+      .values({
+        name: "Other Instructor",
+        email: "other-inst@example.com",
+        role: schema.UserRole.Instructor,
+      })
+      .returning()
+      .get();
+    const otherCourse = testDb
+      .insert(schema.courses)
+      .values({
+        title: "Other Course",
+        slug: "other-course",
+        description: "Another course",
+        instructorId: otherInstructor.id,
+        categoryId: base.category.id,
+        status: schema.CourseStatus.Published,
+      })
+      .returning()
+      .get();
+
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-01-01T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      otherCourse.id,
+      3000,
+      "2024-01-02T00:00:00.000Z"
+    );
+
+    expect(getPlatformRevenueStats({})).toBe(5000);
+  });
+
+  it("filters by date range", () => {
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-01-01T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      3000,
+      "2024-03-01T00:00:00.000Z"
+    );
+
+    expect(
+      getPlatformRevenueStats({
+        startDate: "2024-02-01T00:00:00.000Z",
+        endDate: "2024-04-01T00:00:00.000Z",
+      })
+    ).toBe(3000);
+  });
+});
+
+describe("getPlatformEnrollmentStats", () => {
+  it("returns 0 when no enrollments exist", () => {
+    expect(getPlatformEnrollmentStats({})).toBe(0);
+  });
+
+  it("counts enrollments across all courses", () => {
+    const otherInstructor = testDb
+      .insert(schema.users)
+      .values({
+        name: "Other Instructor",
+        email: "other-inst2@example.com",
+        role: schema.UserRole.Instructor,
+      })
+      .returning()
+      .get();
+    const otherCourse = testDb
+      .insert(schema.courses)
+      .values({
+        title: "Other Course 2",
+        slug: "other-course-2",
+        description: "Another course",
+        instructorId: otherInstructor.id,
+        categoryId: base.category.id,
+        status: schema.CourseStatus.Published,
+      })
+      .returning()
+      .get();
+
+    createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z");
+    createEnrollment(base.user.id, otherCourse.id, "2024-01-02T00:00:00.000Z");
+
+    expect(getPlatformEnrollmentStats({})).toBe(2);
+  });
+
+  it("filters by date range", () => {
+    createEnrollment(base.user.id, base.course.id, "2024-01-15T00:00:00.000Z");
+    createEnrollment(base.user.id, base.course.id, "2024-03-15T00:00:00.000Z");
+
+    expect(
+      getPlatformEnrollmentStats({ startDate: "2024-02-01T00:00:00.000Z" })
+    ).toBe(1);
+  });
+});
+
+describe("getTopEarningCourse", () => {
+  it("returns null when no purchases exist", () => {
+    expect(getTopEarningCourse({})).toBeNull();
+  });
+
+  it("returns the course with the highest revenue", () => {
+    const otherInstructor = testDb
+      .insert(schema.users)
+      .values({
+        name: "Other Instructor",
+        email: "other-inst3@example.com",
+        role: schema.UserRole.Instructor,
+      })
+      .returning()
+      .get();
+    const highRevenueCourse = testDb
+      .insert(schema.courses)
+      .values({
+        title: "High Revenue Course",
+        slug: "high-revenue",
+        description: "Big earner",
+        instructorId: otherInstructor.id,
+        categoryId: base.category.id,
+        status: schema.CourseStatus.Published,
+      })
+      .returning()
+      .get();
+
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      1000,
+      "2024-01-01T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      highRevenueCourse.id,
+      5000,
+      "2024-01-01T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      highRevenueCourse.id,
+      3000,
+      "2024-01-02T00:00:00.000Z"
+    );
+
+    const top = getTopEarningCourse({});
+    expect(top).not.toBeNull();
+    expect(top!.courseId).toBe(highRevenueCourse.id);
+    expect(top!.title).toBe("High Revenue Course");
+    expect(top!.revenueCents).toBe(8000);
+  });
+
+  it("filters by date range", () => {
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      5000,
+      "2024-01-01T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      1000,
+      "2024-03-01T00:00:00.000Z"
+    );
+
+    const top = getTopEarningCourse({
+      startDate: "2024-02-01T00:00:00.000Z",
+      endDate: "2024-04-01T00:00:00.000Z",
+    });
+    expect(top).not.toBeNull();
+    expect(top!.revenueCents).toBe(1000);
   });
 });
