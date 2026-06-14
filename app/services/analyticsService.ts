@@ -8,6 +8,7 @@ import {
   lessons,
   modules,
   courses,
+  courseRatings,
   lessonProgress,
   LessonProgressStatus,
   users,
@@ -464,4 +465,133 @@ export function getLessonDropOffFunnel({
     ...row,
     percentage: Math.round((row.completedCount / totalEnrolled) * 100),
   }));
+}
+
+export type CourseBreakdownRow = {
+  courseId: number;
+  title: string;
+  instructorName: string;
+  listPriceCents: number;
+  revenueCents: number;
+  sales: number;
+  enrollments: number;
+  averageRating: number | null;
+};
+
+type CourseBreakdownFilter = {
+  startDate?: string;
+  endDate?: string;
+  instructorId?: number;
+};
+
+export function getCourseBreakdown({
+  startDate,
+  endDate,
+  instructorId,
+}: CourseBreakdownFilter): CourseBreakdownRow[] {
+  const dateConditions = and(
+    startDate !== undefined ? gte(purchases.createdAt, startDate) : undefined,
+    endDate !== undefined ? lte(purchases.createdAt, endDate) : undefined
+  );
+
+  const revenueRows = db
+    .select({
+      courseId: purchases.courseId,
+      revenueCents: sql<number>`cast(coalesce(sum(${purchases.pricePaid}), 0) as integer)`,
+      sales: sql<number>`cast(count(*) as integer)`,
+    })
+    .from(purchases)
+    .where(dateConditions)
+    .groupBy(purchases.courseId)
+    .all();
+
+  const revenueMap = new Map(
+    revenueRows.map((r) => [
+      r.courseId,
+      { revenueCents: r.revenueCents, sales: r.sales },
+    ])
+  );
+
+  const enrollmentDateConditions = and(
+    startDate !== undefined
+      ? gte(enrollments.enrolledAt, startDate)
+      : undefined,
+    endDate !== undefined ? lte(enrollments.enrolledAt, endDate) : undefined
+  );
+
+  const enrollmentRows = db
+    .select({
+      courseId: enrollments.courseId,
+      count: sql<number>`cast(count(*) as integer)`,
+    })
+    .from(enrollments)
+    .where(enrollmentDateConditions)
+    .groupBy(enrollments.courseId)
+    .all();
+
+  const enrollmentMap = new Map(
+    enrollmentRows.map((r) => [r.courseId, r.count])
+  );
+
+  const ratingRows = db
+    .select({
+      courseId: courseRatings.courseId,
+      avg: sql<number>`avg(${courseRatings.rating})`,
+    })
+    .from(courseRatings)
+    .groupBy(courseRatings.courseId)
+    .all();
+
+  const ratingMap = new Map(ratingRows.map((r) => [r.courseId, r.avg]));
+
+  const courseConditions = and(
+    instructorId !== undefined
+      ? eq(courses.instructorId, instructorId)
+      : undefined
+  );
+
+  const allCourses = db
+    .select({
+      id: courses.id,
+      title: courses.title,
+      price: courses.price,
+      instructorName: users.name,
+    })
+    .from(courses)
+    .innerJoin(users, eq(courses.instructorId, users.id))
+    .where(courseConditions)
+    .orderBy(courses.title)
+    .all();
+
+  return allCourses.map((c) => {
+    const rev = revenueMap.get(c.id);
+    return {
+      courseId: c.id,
+      title: c.title,
+      instructorName: c.instructorName,
+      listPriceCents: c.price,
+      revenueCents: rev?.revenueCents ?? 0,
+      sales: rev?.sales ?? 0,
+      enrollments: enrollmentMap.get(c.id) ?? 0,
+      averageRating: ratingMap.get(c.id) ?? null,
+    };
+  });
+}
+
+export type InstructorOption = {
+  id: number;
+  name: string;
+};
+
+export function getInstructorsWithCourses(): InstructorOption[] {
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+    })
+    .from(users)
+    .innerJoin(courses, eq(courses.instructorId, users.id))
+    .groupBy(users.id)
+    .orderBy(users.name)
+    .all();
 }

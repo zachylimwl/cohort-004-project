@@ -9,6 +9,8 @@ import {
   getTopEarningCourse,
   getPlatformDailyRevenue,
   getPlatformMonthlyRevenue,
+  getCourseBreakdown,
+  getInstructorsWithCourses,
   fillDailyGaps,
   fillMonthlyGaps,
 } from "~/services/analyticsService";
@@ -35,6 +37,7 @@ import {
   AlertTriangle,
   BarChart2,
   DollarSign,
+  Star,
   Trophy,
   Users,
 } from "lucide-react";
@@ -111,6 +114,21 @@ export async function loader({ request }: Route.LoaderArgs) {
       : fillDailyGaps(rawRevenue, first, last);
   }
 
+  const instructorParam = url.searchParams.get("instructorId");
+  const selectedInstructorId = instructorParam
+    ? parseInt(instructorParam, 10)
+    : undefined;
+
+  const courseBreakdown = getCourseBreakdown({
+    ...filter,
+    instructorId:
+      selectedInstructorId && !Number.isNaN(selectedInstructorId)
+        ? selectedInstructorId
+        : undefined,
+  });
+
+  const instructors = getInstructorsWithCourses();
+
   return {
     totalRevenueCents,
     totalEnrollments,
@@ -118,6 +136,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     revenueTimeSeries,
     useMonthly,
     range,
+    courseBreakdown,
+    instructors,
+    selectedInstructorId: selectedInstructorId ?? null,
   };
 }
 
@@ -164,6 +185,9 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
     revenueTimeSeries,
     useMonthly,
     range,
+    courseBreakdown,
+    instructors,
+    selectedInstructorId,
   } = loaderData;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -176,6 +200,16 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
   function handleRangeChange(value: string) {
     const params = new URLSearchParams(searchParams);
     params.set("range", value);
+    navigate(`/admin/analytics?${params.toString()}`);
+  }
+
+  function handleInstructorChange(value: string) {
+    const params = new URLSearchParams(searchParams);
+    if (value === "all") {
+      params.delete("instructorId");
+    } else {
+      params.set("instructorId", value);
+    }
     navigate(`/admin/analytics?${params.toString()}`);
   }
 
@@ -300,6 +334,121 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
               xAxisTickFormatter={useMonthly ? formatMonthTick : undefined}
               color="hsl(142, 70%, 45%)"
             />
+          </div>
+
+          <div className="mt-8">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Course Breakdown</h2>
+              <Select
+                value={
+                  selectedInstructorId !== null
+                    ? String(selectedInstructorId)
+                    : "all"
+                }
+                onValueChange={handleInstructorChange}
+              >
+                <SelectTrigger className="w-52">
+                  <SelectValue placeholder="Filter by instructor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Instructors</SelectItem>
+                  {instructors.map((inst) => (
+                    <SelectItem key={inst.id} value={String(inst.id)}>
+                      {inst.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {courseBreakdown.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center py-12 text-center">
+                  <BarChart2 className="mb-3 size-10 text-muted-foreground/50" />
+                  <p className="text-lg font-medium">No courses found</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {selectedInstructorId !== null
+                      ? "No courses found for this instructor."
+                      : "No courses have been created yet."}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Course
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Instructor
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            List Price
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Revenue
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Sales
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Enrollments
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Rating
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {courseBreakdown.map((row) => (
+                          <tr
+                            key={row.courseId}
+                            className="border-b border-border last:border-0"
+                          >
+                            <td className="px-4 py-3 text-sm font-medium">
+                              {row.title}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
+                              {row.instructorName}
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm">
+                              {formatPrice(row.listPriceCents)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm font-medium">
+                              {row.revenueCents === 0
+                                ? "$0.00"
+                                : formatPrice(row.revenueCents)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm text-muted-foreground">
+                              {row.sales}
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm text-muted-foreground">
+                              {row.enrollments}
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm text-muted-foreground">
+                              {row.averageRating !== null ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <Star className="size-3.5 fill-yellow-400 text-yellow-400" />
+                                  {row.averageRating.toFixed(1)}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground/50">
+                                  —
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </>
       )}

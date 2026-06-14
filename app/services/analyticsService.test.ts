@@ -26,6 +26,8 @@ import {
   getTopEarningCourse,
   getPlatformDailyRevenue,
   getPlatformMonthlyRevenue,
+  getCourseBreakdown,
+  getInstructorsWithCourses,
   fillDailyGaps,
   fillMonthlyGaps,
 } from "./analyticsService";
@@ -877,5 +879,173 @@ describe("fillMonthlyGaps", () => {
     );
     expect(result).toHaveLength(3);
     expect(result.every((d) => d.value === 0)).toBe(true);
+  });
+});
+
+function createRating(userId: number, courseId: number, rating: number) {
+  return testDb
+    .insert(schema.courseRatings)
+    .values({ userId, courseId, rating })
+    .returning()
+    .get();
+}
+
+describe("getCourseBreakdown", () => {
+  it("returns all courses with zero metrics when no purchases or enrollments", () => {
+    const rows = getCourseBreakdown({});
+    expect(rows).toHaveLength(1);
+    expect(rows[0].courseId).toBe(base.course.id);
+    expect(rows[0].title).toBe("Test Course");
+    expect(rows[0].instructorName).toBe("Test Instructor");
+    expect(rows[0].revenueCents).toBe(0);
+    expect(rows[0].sales).toBe(0);
+    expect(rows[0].enrollments).toBe(0);
+    expect(rows[0].averageRating).toBeNull();
+  });
+
+  it("aggregates revenue, sales, enrollments, and ratings per course", () => {
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-01-01T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      3000,
+      "2024-01-02T00:00:00.000Z"
+    );
+    createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z");
+    createRating(base.user.id, base.course.id, 4);
+
+    const rows = getCourseBreakdown({});
+    expect(rows).toHaveLength(1);
+    expect(rows[0].revenueCents).toBe(5000);
+    expect(rows[0].sales).toBe(2);
+    expect(rows[0].enrollments).toBe(1);
+    expect(rows[0].averageRating).toBe(4);
+  });
+
+  it("filters revenue and enrollments by date range", () => {
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-01-01T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      3000,
+      "2024-03-01T00:00:00.000Z"
+    );
+    createEnrollment(base.user.id, base.course.id, "2024-01-01T00:00:00.000Z");
+    createEnrollment(base.user.id, base.course.id, "2024-03-01T00:00:00.000Z");
+
+    const rows = getCourseBreakdown({
+      startDate: "2024-02-01T00:00:00.000Z",
+      endDate: "2024-04-01T00:00:00.000Z",
+    });
+    expect(rows[0].revenueCents).toBe(3000);
+    expect(rows[0].sales).toBe(1);
+    expect(rows[0].enrollments).toBe(1);
+  });
+
+  it("filters by instructorId", () => {
+    const otherInstructor = testDb
+      .insert(schema.users)
+      .values({
+        name: "Other Instructor",
+        email: "breakdown-inst@example.com",
+        role: schema.UserRole.Instructor,
+      })
+      .returning()
+      .get();
+    testDb
+      .insert(schema.courses)
+      .values({
+        title: "Other Course",
+        slug: "breakdown-other",
+        description: "Another course",
+        instructorId: otherInstructor.id,
+        categoryId: base.category.id,
+        status: schema.CourseStatus.Published,
+      })
+      .returning()
+      .get();
+
+    const all = getCourseBreakdown({});
+    expect(all).toHaveLength(2);
+
+    const filtered = getCourseBreakdown({
+      instructorId: base.instructor.id,
+    });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].instructorName).toBe("Test Instructor");
+  });
+
+  it("includes list price from the course", () => {
+    const rows = getCourseBreakdown({});
+    expect(rows[0].listPriceCents).toBe(base.course.price);
+  });
+
+  it("computes average rating across multiple ratings", () => {
+    const user2 = testDb
+      .insert(schema.users)
+      .values({
+        name: "User 2",
+        email: "user2-rating@example.com",
+        role: schema.UserRole.Student,
+      })
+      .returning()
+      .get();
+    createRating(base.user.id, base.course.id, 5);
+    createRating(user2.id, base.course.id, 3);
+
+    const rows = getCourseBreakdown({});
+    expect(rows[0].averageRating).toBe(4);
+  });
+});
+
+describe("getInstructorsWithCourses", () => {
+  it("returns instructors who have at least one course", () => {
+    const result = getInstructorsWithCourses();
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(base.instructor.id);
+    expect(result[0].name).toBe("Test Instructor");
+  });
+
+  it("excludes instructors with no courses", () => {
+    testDb
+      .insert(schema.users)
+      .values({
+        name: "No Courses Instructor",
+        email: "no-courses@example.com",
+        role: schema.UserRole.Instructor,
+      })
+      .returning()
+      .get();
+
+    const result = getInstructorsWithCourses();
+    expect(result).toHaveLength(1);
+  });
+
+  it("does not duplicate instructors with multiple courses", () => {
+    testDb
+      .insert(schema.courses)
+      .values({
+        title: "Second Course",
+        slug: "second-course",
+        description: "Another",
+        instructorId: base.instructor.id,
+        categoryId: base.category.id,
+        status: schema.CourseStatus.Published,
+      })
+      .returning()
+      .get();
+
+    const result = getInstructorsWithCourses();
+    expect(result).toHaveLength(1);
   });
 });
