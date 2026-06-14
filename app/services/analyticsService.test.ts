@@ -24,6 +24,10 @@ import {
   getPlatformRevenueStats,
   getPlatformEnrollmentStats,
   getTopEarningCourse,
+  getPlatformDailyRevenue,
+  getPlatformMonthlyRevenue,
+  fillDailyGaps,
+  fillMonthlyGaps,
 } from "./analyticsService";
 
 beforeEach(() => {
@@ -685,5 +689,193 @@ describe("getTopEarningCourse", () => {
     });
     expect(top).not.toBeNull();
     expect(top!.revenueCents).toBe(1000);
+  });
+});
+
+describe("getPlatformDailyRevenue", () => {
+  it("returns empty array when no purchases", () => {
+    expect(getPlatformDailyRevenue({})).toEqual([]);
+  });
+
+  it("groups revenue by calendar day across all instructors", () => {
+    const otherInstructor = testDb
+      .insert(schema.users)
+      .values({
+        name: "Other Instructor",
+        email: "daily-rev-inst@example.com",
+        role: schema.UserRole.Instructor,
+      })
+      .returning()
+      .get();
+    const otherCourse = testDb
+      .insert(schema.courses)
+      .values({
+        title: "Other Course",
+        slug: "daily-rev-course",
+        description: "Another course",
+        instructorId: otherInstructor.id,
+        categoryId: base.category.id,
+        status: schema.CourseStatus.Published,
+      })
+      .returning()
+      .get();
+
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      1000,
+      "2024-01-15T08:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      otherCourse.id,
+      2000,
+      "2024-01-15T20:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      500,
+      "2024-01-16T08:00:00.000Z"
+    );
+
+    const rows = getPlatformDailyRevenue({});
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({ date: "2024-01-15", value: 3000 });
+    expect(rows[1]).toEqual({ date: "2024-01-16", value: 500 });
+  });
+
+  it("filters by date range", () => {
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      1000,
+      "2024-01-10T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-03-10T00:00:00.000Z"
+    );
+
+    const rows = getPlatformDailyRevenue({
+      startDate: "2024-02-01T00:00:00.000Z",
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ date: "2024-03-10", value: 2000 });
+  });
+});
+
+describe("getPlatformMonthlyRevenue", () => {
+  it("returns empty array when no purchases", () => {
+    expect(getPlatformMonthlyRevenue({})).toEqual([]);
+  });
+
+  it("groups revenue by month across all instructors", () => {
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      1000,
+      "2024-01-10T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-01-20T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      500,
+      "2024-03-05T00:00:00.000Z"
+    );
+
+    const rows = getPlatformMonthlyRevenue({});
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({ date: "2024-01", value: 3000 });
+    expect(rows[1]).toEqual({ date: "2024-03", value: 500 });
+  });
+
+  it("filters by date range", () => {
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      1000,
+      "2024-01-10T00:00:00.000Z"
+    );
+    createPurchase(
+      base.user.id,
+      base.course.id,
+      2000,
+      "2024-06-10T00:00:00.000Z"
+    );
+
+    const rows = getPlatformMonthlyRevenue({
+      startDate: "2024-04-01T00:00:00.000Z",
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ date: "2024-06", value: 2000 });
+  });
+});
+
+describe("fillDailyGaps", () => {
+  it("fills missing days with zero values", () => {
+    const data = [
+      { date: "2024-01-01", value: 100 },
+      { date: "2024-01-03", value: 200 },
+    ];
+    const result = fillDailyGaps(
+      data,
+      "2024-01-01T00:00:00.000Z",
+      "2024-01-04T00:00:00.000Z"
+    );
+    expect(result).toEqual([
+      { date: "2024-01-01", value: 100 },
+      { date: "2024-01-02", value: 0 },
+      { date: "2024-01-03", value: 200 },
+      { date: "2024-01-04", value: 0 },
+    ]);
+  });
+
+  it("returns all zeros for empty data", () => {
+    const result = fillDailyGaps(
+      [],
+      "2024-01-01T00:00:00.000Z",
+      "2024-01-03T00:00:00.000Z"
+    );
+    expect(result).toHaveLength(3);
+    expect(result.every((d) => d.value === 0)).toBe(true);
+  });
+});
+
+describe("fillMonthlyGaps", () => {
+  it("fills missing months with zero values", () => {
+    const data = [
+      { date: "2024-01", value: 1000 },
+      { date: "2024-03", value: 2000 },
+    ];
+    const result = fillMonthlyGaps(
+      data,
+      "2024-01-01T00:00:00.000Z",
+      "2024-04-01T00:00:00.000Z"
+    );
+    expect(result).toEqual([
+      { date: "2024-01", value: 1000 },
+      { date: "2024-02", value: 0 },
+      { date: "2024-03", value: 2000 },
+      { date: "2024-04", value: 0 },
+    ]);
+  });
+
+  it("returns all zeros for empty data", () => {
+    const result = fillMonthlyGaps(
+      [],
+      "2024-01-01T00:00:00.000Z",
+      "2024-03-15T00:00:00.000Z"
+    );
+    expect(result).toHaveLength(3);
+    expect(result.every((d) => d.value === 0)).toBe(true);
   });
 });

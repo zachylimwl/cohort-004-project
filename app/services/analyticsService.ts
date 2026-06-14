@@ -341,6 +341,91 @@ export function getTopEarningCourse({
   return result;
 }
 
+export function getPlatformDailyRevenue({
+  startDate,
+  endDate,
+}: PlatformAnalyticsFilter): DailyDataPoint[] {
+  return db
+    .select({
+      date: sql<string>`date(${purchases.createdAt})`,
+      value: sql<number>`cast(coalesce(sum(${purchases.pricePaid}), 0) as integer)`,
+    })
+    .from(purchases)
+    .where(
+      and(
+        startDate !== undefined
+          ? gte(purchases.createdAt, startDate)
+          : undefined,
+        endDate !== undefined ? lte(purchases.createdAt, endDate) : undefined
+      )
+    )
+    .groupBy(sql`date(${purchases.createdAt})`)
+    .orderBy(sql`date(${purchases.createdAt})`)
+    .all();
+}
+
+export function getPlatformMonthlyRevenue({
+  startDate,
+  endDate,
+}: PlatformAnalyticsFilter): DailyDataPoint[] {
+  return db
+    .select({
+      date: sql<string>`strftime('%Y-%m', ${purchases.createdAt})`,
+      value: sql<number>`cast(coalesce(sum(${purchases.pricePaid}), 0) as integer)`,
+    })
+    .from(purchases)
+    .where(
+      and(
+        startDate !== undefined
+          ? gte(purchases.createdAt, startDate)
+          : undefined,
+        endDate !== undefined ? lte(purchases.createdAt, endDate) : undefined
+      )
+    )
+    .groupBy(sql`strftime('%Y-%m', ${purchases.createdAt})`)
+    .orderBy(sql`strftime('%Y-%m', ${purchases.createdAt})`)
+    .all();
+}
+
+export function fillDailyGaps(
+  data: DailyDataPoint[],
+  startDate: string,
+  endDate: string
+): DailyDataPoint[] {
+  const dataMap = new Map(data.map((d) => [d.date, d.value]));
+  const result: DailyDataPoint[] = [];
+  const current = new Date(startDate.slice(0, 10));
+  const end = new Date(endDate.slice(0, 10));
+
+  while (current <= end) {
+    const dateStr = current.toISOString().slice(0, 10);
+    result.push({ date: dateStr, value: dataMap.get(dateStr) ?? 0 });
+    current.setDate(current.getDate() + 1);
+  }
+
+  return result;
+}
+
+export function fillMonthlyGaps(
+  data: DailyDataPoint[],
+  startDate: string,
+  endDate: string
+): DailyDataPoint[] {
+  const dataMap = new Map(data.map((d) => [d.date, d.value]));
+  const result: DailyDataPoint[] = [];
+  const current = new Date(startDate.slice(0, 10));
+  current.setDate(1);
+  const end = new Date(endDate.slice(0, 10));
+
+  while (current <= end) {
+    const monthStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`;
+    result.push({ date: monthStr, value: dataMap.get(monthStr) ?? 0 });
+    current.setMonth(current.getMonth() + 1);
+  }
+
+  return result;
+}
+
 export function getLessonDropOffFunnel({
   courseId,
 }: {

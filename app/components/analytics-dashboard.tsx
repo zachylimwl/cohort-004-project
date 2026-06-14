@@ -77,13 +77,13 @@ export type AnalyticsDashboardProps = {
   dropOffFunnel: FunnelEntry[] | null;
 };
 
-function useIsClient() {
+export function useIsClient() {
   const [isClient, setIsClient] = useState(false);
   useEffect(() => setIsClient(true), []);
   return isClient;
 }
 
-function formatDateTick(dateStr: string) {
+export function formatDateTick(dateStr: string) {
   const [, month, day] = dateStr.split("-");
   return `${month}/${day}`;
 }
@@ -94,15 +94,17 @@ type LineChartCardProps = {
   isClient: boolean;
   formatValue?: (v: number) => string;
   yAxisTickFormatter?: (v: number) => string;
+  xAxisTickFormatter?: (v: string) => string;
   color?: string;
 };
 
-function LineChartCard({
+export function LineChartCard({
   title,
   data,
   isClient,
   formatValue,
   yAxisTickFormatter,
+  xAxisTickFormatter = formatDateTick,
   color = "hsl(var(--primary))",
 }: LineChartCardProps) {
   return (
@@ -131,7 +133,7 @@ function LineChartCard({
               />
               <XAxis
                 dataKey="date"
-                tickFormatter={formatDateTick}
+                tickFormatter={xAxisTickFormatter}
                 tick={{ fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
@@ -373,7 +375,9 @@ export function AnalyticsDashboard({
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
-              {totalRevenueCents === 0 ? "$0.00" : formatPrice(totalRevenueCents)}
+              {totalRevenueCents === 0
+                ? "$0.00"
+                : formatPrice(totalRevenueCents)}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               gross revenue · {rangeLabel.toLowerCase()}

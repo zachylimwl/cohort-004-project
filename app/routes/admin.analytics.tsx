@@ -7,12 +7,18 @@ import {
   getPlatformRevenueStats,
   getPlatformEnrollmentStats,
   getTopEarningCourse,
+  getPlatformDailyRevenue,
+  getPlatformMonthlyRevenue,
+  fillDailyGaps,
+  fillMonthlyGaps,
 } from "~/services/analyticsService";
 import {
   isDateRange,
   computeDateRange,
   DATE_RANGES,
   type DateRange,
+  LineChartCard,
+  useIsClient,
 } from "~/components/analytics-dashboard";
 import { formatPrice } from "~/lib/utils";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
@@ -33,6 +39,26 @@ import {
   Users,
 } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
+
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function formatMonthTick(dateStr: string) {
+  const [year, month] = dateStr.split("-");
+  return `${MONTH_NAMES[parseInt(month, 10) - 1]} ${year.slice(2)}`;
+}
 
 export function meta() {
   return [
@@ -67,10 +93,30 @@ export async function loader({ request }: Route.LoaderArgs) {
   const totalEnrollments = getPlatformEnrollmentStats(filter);
   const topEarningCourse = getTopEarningCourse(filter);
 
+  const useMonthly = range === "last12months" || range === "alltime";
+  const rawRevenue = useMonthly
+    ? getPlatformMonthlyRevenue(filter)
+    : getPlatformDailyRevenue(filter);
+
+  let revenueTimeSeries = rawRevenue;
+  if (startDate && endDate) {
+    revenueTimeSeries = useMonthly
+      ? fillMonthlyGaps(rawRevenue, startDate, endDate)
+      : fillDailyGaps(rawRevenue, startDate, endDate);
+  } else if (rawRevenue.length > 0) {
+    const first = rawRevenue[0].date;
+    const last = rawRevenue[rawRevenue.length - 1].date;
+    revenueTimeSeries = useMonthly
+      ? fillMonthlyGaps(rawRevenue, first, last)
+      : fillDailyGaps(rawRevenue, first, last);
+  }
+
   return {
     totalRevenueCents,
     totalEnrollments,
     topEarningCourse,
+    revenueTimeSeries,
+    useMonthly,
     range,
   };
 }
@@ -96,15 +142,32 @@ export function HydrateFallback() {
           </Card>
         ))}
       </div>
+      <div className="mt-8">
+        <Card>
+          <CardHeader className="pb-2">
+            <Skeleton className="h-4 w-36" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-[200px] w-full" />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
 
 export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
-  const { totalRevenueCents, totalEnrollments, topEarningCourse, range } =
-    loaderData;
+  const {
+    totalRevenueCents,
+    totalEnrollments,
+    topEarningCourse,
+    revenueTimeSeries,
+    useMonthly,
+    range,
+  } = loaderData;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const isClient = useIsClient();
 
   const hasData = totalRevenueCents > 0 || totalEnrollments > 0;
   const rangeLabel =
@@ -160,71 +223,85 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <span className="text-sm font-medium text-muted-foreground">
-                Total Revenue
-              </span>
-              <DollarSign className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">
-                {totalRevenueCents === 0
-                  ? "$0.00"
-                  : formatPrice(totalRevenueCents)}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                gross revenue · {rangeLabel.toLowerCase()}
-              </p>
-            </CardContent>
-          </Card>
+        <>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Total Revenue
+                </span>
+                <DollarSign className="size-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">
+                  {totalRevenueCents === 0
+                    ? "$0.00"
+                    : formatPrice(totalRevenueCents)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  gross revenue · {rangeLabel.toLowerCase()}
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <span className="text-sm font-medium text-muted-foreground">
-                Total Enrollments
-              </span>
-              <Users className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">
-                {totalEnrollments.toLocaleString()}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                across all courses · {rangeLabel.toLowerCase()}
-              </p>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Total Enrollments
+                </span>
+                <Users className="size-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">
+                  {totalEnrollments.toLocaleString()}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  across all courses · {rangeLabel.toLowerCase()}
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <span className="text-sm font-medium text-muted-foreground">
-                Top Earning Course
-              </span>
-              <Trophy className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {topEarningCourse ? (
-                <>
-                  <p className="truncate text-2xl font-bold">
-                    {formatPrice(topEarningCourse.revenueCents)}
-                  </p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {topEarningCourse.title}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-2xl font-bold">—</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    no purchases yet
-                  </p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Top Earning Course
+                </span>
+                <Trophy className="size-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {topEarningCourse ? (
+                  <>
+                    <p className="truncate text-2xl font-bold">
+                      {formatPrice(topEarningCourse.revenueCents)}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {topEarningCourse.title}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold">—</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      no purchases yet
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="mt-8">
+            <LineChartCard
+              title="Revenue Over Time"
+              data={revenueTimeSeries}
+              isClient={isClient}
+              formatValue={(v) => formatPrice(v)}
+              yAxisTickFormatter={(v) => `$${(v / 100).toFixed(0)}`}
+              xAxisTickFormatter={useMonthly ? formatMonthTick : undefined}
+              color="hsl(142, 70%, 45%)"
+            />
+          </div>
+        </>
       )}
     </div>
   );
