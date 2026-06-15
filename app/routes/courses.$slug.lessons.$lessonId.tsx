@@ -26,6 +26,7 @@ import {
   getBestAttempt,
 } from "~/services/quizService";
 import { computeResult } from "~/services/quizScoringService";
+import { awardLessonXp, awardQuizXp } from "~/services/xpService";
 import {
   getCommentsForLesson,
   createComment,
@@ -174,7 +175,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         lessonProgressMap[record.lessonId] = record.status;
       }
 
-      bookmarkedLessonIds = getBookmarkedLessonIds({ userId: currentUserId, courseId: course.id });
+      bookmarkedLessonIds = getBookmarkedLessonIds({
+        userId: currentUserId,
+        courseId: course.id,
+      });
       isBookmarked = isLessonBookmarked({ userId: currentUserId, lessonId });
 
       // Get video watch state for resume and progress display
@@ -331,6 +335,7 @@ export async function action({ params, request }: Route.ActionArgs) {
 
   if (intent === "mark-complete") {
     markLessonComplete(currentUserId, lessonId);
+    awardLessonXp({ userId: currentUserId, lessonId });
     return { success: true };
   }
 
@@ -365,6 +370,10 @@ export async function action({ params, request }: Route.ActionArgs) {
       throw data("Failed to score quiz", { status: 500 });
     }
 
+    if (result.passed) {
+      awardQuizXp({ userId: currentUserId, quizId });
+    }
+
     return { quizResult: result };
   }
 
@@ -372,7 +381,11 @@ export async function action({ params, request }: Route.ActionArgs) {
     const currentUser = getUserById(currentUserId);
     const isAdmin = currentUser?.role === UserRole.Admin;
     const isInstructor = course.instructorId === currentUserId;
-    if (!isUserEnrolled(currentUserId, course.id) && !isInstructor && !isAdmin) {
+    if (
+      !isUserEnrolled(currentUserId, course.id) &&
+      !isInstructor &&
+      !isAdmin
+    ) {
       throw data("You must be enrolled to comment", { status: 403 });
     }
     const body = String(formData.get("body") ?? "").trim();
@@ -1161,7 +1174,8 @@ function CommentsSection({
   const [body, setBody] = useState("");
 
   const isSubmitting =
-    fetcher.state !== "idle" && fetcher.formData?.get("intent") === "post-comment";
+    fetcher.state !== "idle" &&
+    fetcher.formData?.get("intent") === "post-comment";
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.success && body) {
@@ -1211,7 +1225,9 @@ function CommentsSection({
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-medium">{comment.userName}</span>
+                  <span className="text-sm font-medium">
+                    {comment.userName}
+                  </span>
                   <span className="text-xs text-muted-foreground">
                     {new Date(comment.createdAt).toLocaleDateString()}
                   </span>

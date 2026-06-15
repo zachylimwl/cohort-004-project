@@ -39,6 +39,11 @@ export enum NotificationType {
   CouponRedemption = "coupon_redemption",
 }
 
+export enum XpSourceType {
+  LessonCompletion = "lesson_completion",
+  QuizPass = "quiz_pass",
+}
+
 // ─── Tables ───
 
 export const users = sqliteTable("users", {
@@ -314,6 +319,19 @@ export const notifications = sqliteTable("notifications", {
   message: text("message").notNull(),
   linkUrl: text("link_url").notNull(),
   isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export const xpEvents = sqliteTable("xp_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
+  amount: integer("amount").notNull(),
+  sourceType: text("source_type").notNull().$type<XpSourceType>(),
+  sourceId: integer("source_id").notNull(),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
