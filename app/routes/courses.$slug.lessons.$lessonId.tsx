@@ -27,6 +27,7 @@ import {
 } from "~/services/quizService";
 import { computeResult } from "~/services/quizScoringService";
 import { awardLessonXp, awardQuizXp } from "~/services/xpService";
+import { recordStreakActivity } from "~/services/streakService";
 import {
   getCommentsForLesson,
   createComment,
@@ -336,6 +337,7 @@ export async function action({ params, request }: Route.ActionArgs) {
   if (intent === "mark-complete") {
     markLessonComplete(currentUserId, lessonId);
     awardLessonXp({ userId: currentUserId, lessonId });
+    recordStreakActivity({ userId: currentUserId });
     return { success: true };
   }
 

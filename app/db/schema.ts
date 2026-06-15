@@ -337,6 +337,37 @@ export const xpEvents = sqliteTable("xp_events", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
+export const streakActivities = sqliteTable(
+  "streak_activities",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    activityDate: text("activity_date").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [
+    uniqueIndex("streak_activities_user_date_unique").on(
+      table.userId,
+      table.activityDate
+    ),
+  ]
+);
+
+export const streakStats = sqliteTable("streak_stats", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id)
+    .unique(),
+  currentStreak: integer("current_streak").notNull().default(0),
+  longestStreak: integer("longest_streak").notNull().default(0),
+  lastActivityDate: text("last_activity_date"),
+});
+
 export const videoWatchEvents = sqliteTable("video_watch_events", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id")

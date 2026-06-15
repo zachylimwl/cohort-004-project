@@ -20,6 +20,7 @@ import {
 import { UserRole } from "~/db/schema";
 import { getTotalXp } from "~/services/xpService";
 import { getLevelInfo } from "~/lib/leveling";
+import { getStreakData } from "~/services/streakService";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const users = getAllUsers();
@@ -56,6 +57,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const isStudent = currentUser?.role === UserRole.Student;
   const totalXp = isStudent && currentUserId ? getTotalXp(currentUserId) : null;
   const levelInfo = totalXp !== null ? getLevelInfo(totalXp) : null;
+  const streakData =
+    isStudent && currentUserId ? getStreakData(currentUserId) : null;
 
   const isInstructor = currentUser?.role === UserRole.Instructor;
   const userIsTeamAdmin = currentUserId ? isTeamAdmin(currentUserId) : false;
@@ -92,6 +95,8 @@ export async function loader({ request }: Route.LoaderArgs) {
             level: levelInfo.level,
             currentLevelXp: levelInfo.currentLevelXp,
             nextLevelXp: levelInfo.nextLevelXp,
+            currentStreak: streakData?.currentStreak ?? 0,
+            longestStreak: streakData?.longestStreak ?? 0,
           }
         : null,
   };

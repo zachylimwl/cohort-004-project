@@ -8,6 +8,7 @@ import type { notifications } from "~/db/schema";
 import {
   BarChart2,
   BookOpen,
+  Flame,
   LayoutDashboard,
   GraduationCap,
   Shield,
@@ -45,6 +46,8 @@ interface GamificationData {
   level: number;
   currentLevelXp: number;
   nextLevelXp: number;
+  currentStreak: number;
+  longestStreak: number;
 }
 
 interface SidebarProps {
@@ -218,6 +221,16 @@ export function Sidebar({
                 {gamification.currentLevelXp} / {gamification.nextLevelXp} XP to
                 Level {gamification.level + 1}
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Flame className="size-4 text-orange-500" />
+              <span className="text-sm font-medium">
+                {gamification.currentStreak} day
+                {gamification.currentStreak !== 1 ? "s" : ""}
+              </span>
+              <span className="ml-auto text-xs text-sidebar-foreground/50">
+                Best: {gamification.longestStreak}
+              </span>
             </div>
           </div>
         </div>
