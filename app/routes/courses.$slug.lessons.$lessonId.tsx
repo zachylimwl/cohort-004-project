@@ -15,6 +15,7 @@ import {
   getLessonProgressForCourse,
   markLessonComplete,
   markLessonInProgress,
+  isModuleComplete,
 } from "~/services/progressService";
 import {
   getLastWatchPosition,
@@ -338,6 +339,25 @@ export async function action({ params, request }: Route.ActionArgs) {
     markLessonComplete(currentUserId, lessonId);
     awardLessonXp({ userId: currentUserId, lessonId });
     recordStreakActivity({ userId: currentUserId });
+
+    const lesson = getLessonById(lessonId);
+    if (lesson) {
+      const { complete, lessonCount } = isModuleComplete(
+        currentUserId,
+        lesson.moduleId
+      );
+      if (complete && lessonCount > 0) {
+        const moduleRecord = getModuleById(lesson.moduleId);
+        return {
+          success: true,
+          moduleCompleted: {
+            moduleTitle: moduleRecord?.title ?? "Module",
+            totalXp: lessonCount * 10,
+          },
+        };
+      }
+    }
+
     return { success: true };
   }
 
@@ -493,6 +513,15 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
 
   const isCompleted =
     lessonStatus === LessonProgressStatus.Completed || justCompleted;
+
+  useEffect(() => {
+    if (fetcher.data?.moduleCompleted) {
+      const { moduleTitle, totalXp } = fetcher.data.moduleCompleted;
+      toast.success(`Module complete! +${totalXp} XP earned`, {
+        description: moduleTitle,
+      });
+    }
+  }, [fetcher.data]);
 
   // Navigate to next lesson after marking complete
   useEffect(() => {
